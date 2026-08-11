@@ -79,6 +79,180 @@
 
 ---
 
+## 数据结构(DTO)
+
+请求 / 响应对象集中定义。字段标 `?` 为可选;**必填/缺省**列给出服务端的校验与默认补全规则(与实现一致)。对象按字母序:
+
+### DocLink — doc 规则边(upsert 的 `links[]` 元素)
+
+| 字段 | 类型 | 必填 | 缺省 | 说明 |
+|------|------|------|------|------|
+| `target_id` | string | 否 | — | 目标文档 ID;空值/自环跳过 |
+| `rel` | string | 否 | `link` | `parent` → `HAS_PARENT`,其余 → `LINKS` |
+
+### DocEdge — doc→doc 边(响应)
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `from` / `to` | string | 两端文档 ID |
+| `rel` | string | `link` / `parent` |
+
+### RelatedDoc — 关联文档(响应)
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `doc_id` | string | 文档 ID |
+| `title` / `path` | string | 标题 / 路径 |
+| `via` | string | 关系描述(共同标签 / 链接至 / 链接自) |
+| `depth` | number | 层数(1~2) |
+
+### MentionEdge — 文档提及概念(MENTIONS 边)
+
+| 字段 | 类型 | 必填 | 缺省 | 说明 |
+|------|------|------|------|------|
+| `concept_id` | string | 是 | — | 空值跳过 |
+| `confidence` | number | 否 | `0` | 总置信度 |
+| `extraction_confidence` | number | 否 | `0` | 抽取置信度 |
+| `disambiguation_confidence` | number | 否 | `0` | 消歧置信度 |
+| `source` | string | 否 | `llm` | `llm` / `human` / `rule` |
+| `status` | string | 否 | `active` | `active` / `soft` / `pending` |
+| `text` | string | 否 | `""` | 表面词形(surface form) |
+
+### Concept — 概念词条
+
+| 字段 | 类型 | 必填 | 缺省 | 说明 |
+|------|------|------|------|------|
+| `concept_id` | string | 是 | — | 空值则忽略写入 |
+| `name` | string | 否 | `""` | 名称 |
+| `slug` | string | 否 | `""` | 别名/短名 |
+| `types` | string[] | 否 | `[]` | 逗号拼接存储 |
+| `description` | string | 否 | `""` | 描述 |
+| `source` | string | 否 | `human` | `rule` / `llm` / `human` |
+| `status` | string | 否 | `active` | `active` / `merged` / `deprecated` |
+
+### ConceptRel — 概念间关系(REL 边)
+
+| 字段 | 类型 | 必填 | 缺省 | 说明 |
+|------|------|------|------|------|
+| `from` / `to` | string | 是 | — | 两端概念 ID;空值跳过 |
+| `rel` | string | 否 | `related_to` | `is_a` / `part_of` 等 |
+| `confidence` | number | 否 | `0` | 置信度 |
+| `source` | string | 否 | `llm` | 默认 `llm` |
+| `description` | string | 否 | `""` | 关系描述(图边标签) |
+
+### Theme — 主题(预留)
+
+| 字段 | 类型 | 必填 | 缺省 | 说明 |
+|------|------|------|------|------|
+| `theme_id` | string | 是 | — | 空值则忽略写入 |
+| `title` / `slug` | string | 否 | `""` | 标题 / 别名 |
+| `confidence` | number | 否 | `0` | 置信度 |
+| `source` | string | 否 | `llm` | 来源 |
+| `parent_id` | string | 否 | — | `CHILD_OF` 目标;缺省不动既有层级边 |
+
+### ThemeDocEdge — 主题成员(INCLUDES 边,预留)
+
+| 字段 | 类型 | 必填 | 缺省 | 说明 |
+|------|------|------|------|------|
+| `doc_id` | string | 是 | — | 空值跳过 |
+| `confidence` | number | 否 | `0` | 置信度 |
+| `path` | string | 否 | — | 仅记录,不影响建边 |
+
+### 请求体(端点专用)
+
+| 对象 | 端点 | 结构 |
+|------|------|------|
+| `UpsertDocRequest` | `docs/upsert` | `{ doc_id*, project?, path?, title?, tags?: string[], links?: DocLink[] }` |
+| `RemoveWithStatsRequest` | `docs/remove-with-stats` | `{ doc_id* }` |
+| `PatchMentionsRequest` | `concepts/mentions` | `{ doc_id*, edges: MentionEdge[] }` |
+| `RemoveLLMMentionsRequest` | `concepts/mentions/llm` | `{ doc_id* }` |
+| `PatchRelationsRequest` | `concepts/relations` | `{ edges: ConceptRel[] }` |
+| `PatchThemeMembershipRequest` | `themes/membership` | `{ theme_id*, docs: ThemeDocEdge[] }` |
+
+### 响应体
+
+| 对象 | 出现位置 | 结构 |
+|------|----------|------|
+| `OkResponse` | 写操作 | `{ "ok": true }` |
+| `ErrorResponse` | 任意失败 | `{ "ok": false, "error": "<消息>" }`(缺必填 → `400`,其余 → `500`) |
+| `HealthResponse` | `/v1/health` | `{ ok, backend }` |
+| `StatusResponse` | `/v1/status` | `{ backend, reachable, docs }` |
+| `RemoveDocStats` | `remove-with-stats` | `{ existed, edges }` |
+| `RelatedResponse` | `related` | `{ docs: RelatedDoc[] }` |
+| `ConceptsResponse` | `docs/:id/concepts` | `{ mentions: MentionEdge[] }` |
+| `EdgesResponse` | `doc-edges` | `{ edges: DocEdge[] }` |
+| `TagsResponse` | `doc-tags` | `{ tags: { [doc_id]: string[] } }` |
+| `ConceptListResponse` | `concepts` | `{ concepts: Concept[] }` |
+| `RelationsResponse` | `relations` | `{ relations: ConceptRel[] }` |
+
+---
+
+## 最小工作流(Quickstart)
+
+完整跑一遍:录两篇笔记 → 建概念 → 记提及 → 建概念关系 → 查看图谱。**顺序自由**(占位节点机制让先建 doc 或先建 concept 都行),下面是推荐的阅读顺序。
+
+```bash
+# ① 建两个概念
+curl -s -X POST localhost:8702/v1/graph/concepts/upsert -H 'Content-Type: application/json' -d '{
+  "concept_id": "c_rrf", "name": "RRF", "source": "rule"
+}'
+curl -s -X POST localhost:8702/v1/graph/concepts/upsert -H 'Content-Type: application/json' -d '{
+  "concept_id": "c_retrieval", "name": "检索", "source": "rule"
+}'
+
+# ② 录入笔记 A(带标签 + 链接到 B;目标 B 尚未入库会自动占位)
+curl -s -X POST localhost:8702/v1/graph/docs/upsert -H 'Content-Type: application/json' -d '{
+  "doc_id": "doc-a", "title": "A 笔记", "path": "notes/a.md", "tags": ["搜索"],
+  "links": [{ "target_id": "doc-b", "rel": "link" }]
+}'
+
+# ③ 录入笔记 B
+curl -s -X POST localhost:8702/v1/graph/docs/upsert -H 'Content-Type: application/json' -d '{
+  "doc_id": "doc-b", "title": "B 笔记", "path": "notes/b.md", "tags": ["搜索"]
+}'
+
+# ④ 记提及:LLM(或你)判定 A 提到了 c_rrf 与 c_retrieval
+curl -s -X POST localhost:8702/v1/graph/concepts/mentions -H 'Content-Type: application/json' -d '{
+  "doc_id": "doc-a",
+  "edges": [
+    { "concept_id": "c_rrf",       "confidence": 0.9, "source": "llm" },
+    { "concept_id": "c_retrieval", "confidence": 0.8, "source": "llm" }
+  ]
+}'
+
+# ⑤ 建概念关系:RRF 是检索的一种方法
+curl -s -X POST localhost:8702/v1/graph/concepts/relations -H 'Content-Type: application/json' -d '{
+  "edges": [{ "from": "c_rrf", "to": "c_retrieval", "rel": "is_a", "description": "RRF 是一种检索融合方法" }]
+}'
+
+# ⑥ 查看结果:A 提及了哪些概念、A 关联了哪些文档
+curl -s localhost:8702/v1/graph/docs/doc-a/concepts
+curl -s "localhost:8702/v1/graph/docs/doc-a/related?depth=1"
+```
+
+**手工写入 vs 概念管线**:正常生产中,`Doc` 节点与 `LINKS`/`HAS_PARENT`/`tags` 由上层概念抽取流程写入(图数据唯一写入方);本服务只负责存储与查询。手工调用上述写端点适用于:概念词表(`source=rule`)、人工确认的提及(`source=human`)、调试与测试。
+
+---
+
+## 常见任务对照
+
+| 我想… | 调用 |
+|--------|------|
+| 录入 / 更新一篇文档(标签 + 链接) | `POST /v1/graph/docs/upsert` |
+| 删除一篇文档(连同全部关系边) | `DELETE /v1/graph/docs/:id` |
+| 查一篇文档的关联文档(同标签 / 链接) | `GET /v1/graph/docs/:id/related?depth=1` |
+| 查一篇文档提到了哪些概念 | `GET /v1/graph/docs/:id/concepts` |
+| 新增概念词条 | `POST /v1/graph/concepts/upsert` |
+| 批量录入文档提及(LLM 抽取结果) | `POST /v1/graph/concepts/mentions` |
+| 重抽前清空某文档的机器提及(human 保留) | `DELETE /v1/graph/concepts/mentions/llm` |
+| 建立概念间关系 | `POST /v1/graph/concepts/relations` |
+| 导出全部 doc→doc 边 / 全部标签 | `GET /v1/graph/doc-edges` · `GET /v1/graph/doc-tags` |
+| 导出全部概念关系 | `GET /v1/graph/relations` |
+| 建主题 / 把文档归入主题(预留) | `POST /v1/graph/themes/upsert` · `themes/membership` |
+| 清空整个图库并重建 | `POST /v1/admin/clear` |
+
+---
+
 # Part A — Common(通用图操作)
 
 节点与边的增删查,不承载概念管线规则。
