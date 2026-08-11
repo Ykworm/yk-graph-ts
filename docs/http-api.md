@@ -1,5 +1,17 @@
 # HTTP API — yk-lens-graph-store-ts
 
+## 目录
+
+- [背景:图谱是怎么来的](#背景图谱是怎么来的)
+- [领域概念](#领域概念)
+- [图 Schema](#图-schema)
+- [通用约定](#通用约定)
+- [数据结构(DTO)](#数据结构dto)
+- [最小工作流(Quickstart)](#最小工作流quickstart)
+- [常见任务对照](#常见任务对照)
+- [Part A — Common(通用图操作)](#part-a-common通用图操作)
+- [Part B — 业务绑定(概念管线语义)](#part-b-业务绑定概念管线语义)
+
 图服务 HTTP 契约(`:8702`),yk-lens 的图存储层。开始读 API 之前,先看[背景:图谱是怎么来的](#背景图谱是怎么来的)与[图 Schema](#图-schema)——图里的节点和边来自一套特定的知识建模,不是通用图数据库概念。
 
 所有端点仅允许 **lensd** 调用;参数化 Cypher 全部在服务内完成,外部只传 JSON。
@@ -275,6 +287,8 @@ Cypher:
 MATCH (d:Doc) RETURN count(d)
 ```
 
+**Cypher 解读**:`MATCH (d:Doc)` 找出图里所有的 Doc 节点,`RETURN count(d)` 数出总个数——这个数就是 `/v1/status` 里 `docs` 字段的值。如果这条查询抛错(图库连不上、文件被占用等),服务端会把 `reachable` 置为 `false`,`/v1/health` 随之回 `503`。
+
 ## GET /v1/status
 
 后端状态详情(同 health 数据源,始终回 `200`,如实上报可达性)。
@@ -324,6 +338,15 @@ MERGE (o:Doc {id: $target_id});
 MATCH (a:Doc {id: $from}), (b:Doc {id: $to}) CREATE (a)-[:LINKS]->(b);  -- rel=parent 时用 HAS_PARENT
 ```
 
+**Cypher 解读**(按行):
+1. `MERGE (d:Doc {id: $id}) SET ...` — 按 `id` 找 Doc 节点:有就复用,没有就新建(MERGE 的语义)。然后把 `title` / `path` / `project` / `tags` 四个属性**整体覆盖**写入(`tags` 已在服务端拼成逗号分隔字符串)。注意:只覆盖这四个属性,节点上其它内容不动。
+2. `MATCH (d:Doc {id: $id})-[r:LINKS]->() DELETE r` — 找到该文档发出的所有 `LINKS` **出边**并删除。这是"全量替换"的"先清旧"步骤。
+3. 第二行 `HAS_PARENT` 同理,把 parent 出边也清掉。
+4. `MERGE (o:Doc {id: $target_id})` — 保证链接目标节点存在。目标文档可能还没录入,这里先建一个**只有 id、没有其它属性**的占位节点,等它被 upsert 时再补全标题等。
+5. `MATCH (a:Doc {id: $from}), (b:Doc {id: $to}) CREATE (a)-[:LINKS]->(b)` — 同时找到起点和终点,建一条新的 `LINKS` 边(`rel=parent` 时换成 `HAS_PARENT`)。
+
+整体效果:**节点属性覆盖 + 规则出边先清后建**,其它关系(MENTIONS / INCLUDES / REL)和指向本文档的入边都不受影响。
+
 响应:
 
 ```json
@@ -352,6 +375,8 @@ Cypher:
 MATCH (d:Doc {id: $id}) DETACH DELETE d
 ```
 
+**Cypher 解读**:`DETACH DELETE` 是"连人带关系一起删"——除了删掉节点本身,还会把它**所有的出边和入边**一起删掉。入边也要删,是因为图库不允许存在"指向不存在节点"的悬挂边:别的文档可能 `LINKS` 指向这篇文档,如果不删,就变成悬空引用。文档不存在时这条语句不匹配任何节点,等价于无事发生,所以接口返回 `{ok:true}` 而不报错。
+
 ```json
 { "ok": true }
 ```
@@ -375,6 +400,13 @@ MATCH (d:Doc {id: $id})-[r]-() RETURN count(r);                -- edges
 MATCH (d:Doc {id: $id}) DETACH DELETE d;
 ```
 
+**Cypher 解读**(按行):
+1. `RETURN count(d)` — 先数这篇文档是否存在,决定 `existed`;不存在就直接返回 `{existed:false, edges:0}`,后面两步都不执行。
+2. `-[r]-()` — `r` 表示"任意方向、任意类型"的关系:无论这篇文档是起点还是终点,只要沾着边都被数进来,得到删除前的总边数 `edges`。
+3. `DETACH DELETE d` — 最后真正删除(和上一个端点的删除语句完全相同)。
+
+也就是说,这个端点 = "先统计、后删除",让调用方在删之前知道会影响多少条边。
+
 ```json
 { "existed": true, "edges": 7 }
 ```
@@ -393,6 +425,8 @@ Cypher:
 MATCH (a:Doc)-[:LINKS]->(b:Doc) RETURN a.id, b.id;
 MATCH (a:Doc)-[:HAS_PARENT]->(b:Doc) RETURN a.id, b.id;
 ```
+
+**Cypher 解读**:两条查询结构完全相同,只是关系类型不同——第一条取所有 `LINKS` 边,第二条取所有 `HAS_PARENT` 边,都是"起点 a → 终点 b"。服务端把结果合并,`LINKS` 的行标 `rel=link`、`HAS_PARENT` 的行标 `rel=parent`,就得到完整的 doc→doc 规则边清单(这是图结构"导出"用途,只读不改)。
 
 ```json
 {
@@ -416,6 +450,8 @@ Cypher:
 ```cypher
 MATCH (d:Doc) RETURN d.id, d.tags
 ```
+
+**Cypher 解读**:扫一遍所有 Doc 节点,返回每篇的 `id` 和 `tags`。注意 `tags` 在库里是**逗号分隔的字符串**(upsert 时由数组拼成),所以服务端拿到后要再拆回数组、过滤掉空串,才得到 `{ doc_id: ["rrf", ...] }` 这样的返回结构。没有 tags(空字符串)的文档不会出现在结果里。
 
 ```json
 {
@@ -451,6 +487,8 @@ Cypher:
 MERGE (c:Concept {id: $id}) SET c.name = $name, c.slug = $slug, c.types = $types, c.description = $description, c.status = $status, c.source = $source
 ```
 
+**Cypher 解读**:和 `docs/upsert` 的第一步一样,`MERGE` 按 `id` 找概念:有就复用、没有就新建,然后 `SET` 把六个属性**整体覆盖**。`types` 同样是数组拼成的逗号字符串。`source` 和 `status` 服务端会做缺省补全:没传时 `source` 记 `human`、`status` 记 `active`(在概念词表场景下,`source=rule` 表示词条来自规则/人工维护)。`concept_id` 为空时服务端直接跳过,不执行这条语句。
+
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `concept_id` | string | 必填 |
@@ -478,6 +516,8 @@ Cypher:
 MATCH (c:Concept {id: $id}) RETURN c.id, c.name, c.slug, c.types, c.description, c.status, c.source
 ```
 
+**Cypher 解读**:`{id: $id}` 是精确匹配主键,`RETURN` 列出要取回的七个字段,服务端组装成 `Concept` 对象返回。命中行才有结果;一条都没匹配上就说明该概念不存在,接口回 `404`。注意 `types` 取回来仍是逗号字符串,服务端会拆回数组。
+
 ```json
 {
   "concept_id": "c_rrf",
@@ -504,6 +544,8 @@ Cypher:
 MATCH (c:Concept) RETURN c.id, c.name, c.slug, c.types, c.description, c.status, c.source
 ```
 
+**Cypher 解读**:和上一个端点几乎一样,区别只是**没有 `{id: $id}` 过滤**——`MATCH (c:Concept)` 匹配全部概念节点,返回所有行的七个字段。这就是"列出全部概念"。顺序不做保证;如果概念很多,建议在上层做分页/过滤,而不是依赖这个接口拉全量。
+
 ```json
 { "concepts": [ { "concept_id": "c_rrf", "name": "Reciprocal Rank Fusion" } ] }
 ```
@@ -521,6 +563,8 @@ Cypher:
 ```cypher
 MATCH (a:Concept)-[r:REL]->(b:Concept) RETURN a.id, b.id, r.type, r.confidence, r.source, r.description
 ```
+
+**Cypher 解读**:这条专门查概念之间的 `REL` 边。写法上有一个值得注意的点:关系变量 `r` 的字段名和节点属性不一样——边的类型存在 **`r.type`**(所以请求体里那个字段叫 `rel`,落库是 `type`)。`description` 是后加的列:如果打开的是旧库、这张表还没有该列,查询会失败,服务端会自动降级成不带 `description` 的版本重查一遍,保证边数据不丢。
 
 ```json
 {
@@ -558,6 +602,13 @@ MATCH (t:Theme {id: $id})-[r:CHILD_OF]->() DELETE r;
 MATCH (t:Theme {id: $t}), (p:Theme {id: $p}) CREATE (t)-[:CHILD_OF]->(p);
 ```
 
+**Cypher 解读**(按行):
+1. 第一行和 `concepts/upsert` 相同:按 `id` MERGE 主题节点,`SET` 覆盖 `title` / `slug` / `confidence` / `source`(`source` 缺省补 `llm`)。
+2. 后面四行只在传了 `parent_id` 时执行:先 `MERGE (p:Theme {id: $parent_id})` 保证父主题存在(没有就占位),再删掉该主题**现有的** `CHILD_OF` 出边,最后建一条指向 `parent_id` 的新层级边——即"先清旧、再挂新",保证一个子主题只有一个父。
+3. **没传 `parent_id` 时,既有的 `CHILD_OF` 边原样保留**,不会被误删。
+
+> 提醒:Theme 相关功能当前为预留态,生产环境暂时不会走到这些语句。
+
 ```json
 { "ok": true }
 ```
@@ -580,6 +631,13 @@ DROP TABLE REL; DROP TABLE CHILD_OF; DROP TABLE INCLUDES;
 DROP TABLE Doc; DROP TABLE Concept; DROP TABLE Theme;
 -- 随后重建 Schema(见"图 Schema"节)
 ```
+
+**Cypher 解读**(按行):
+1. 前两行先 DROP 全部**关系表**(LINKS / HAS_PARENT / MENTIONS / REL / CHILD_OF / INCLUDES)。关系表依赖节点表(边指向节点),所以必须先删边、再删点,否则会因外键依赖报错。
+2. 第三行再 DROP 全部**节点表**(Doc / Concept / Theme)。
+3. 最后服务端会重跑一遍建表 DDL,把空 schema 重建回来——所以这个接口的完整效果是"清库 + 重建结构",库文件本身不换(单写者进程仍在)。
+
+**⚠️ 不可恢复**:所有节点和边都被物理删除。调用前务必确认已备份;`concept-clear` 这类运维流程会在调用前先备份到 `dumps/`。
 
 ```json
 { "ok": true }
@@ -619,6 +677,13 @@ MATCH (d:Doc {id: $id})-[:LINKS]->(o:Doc) RETURN o.id, o.title, o.path;
 MATCH (d:Doc {id: $id})<-[:LINKS]-(o:Doc) RETURN o.id, o.title, o.path;
 ```
 
+**Cypher 解读**(三个数据来源):
+1. **共同标签**——`MATCH (o:Doc)` 全表扫一遍,把每篇文档的 `tags` 取回内存,在服务端和目标文档的标签**求交集**:有任一共享标签即算关联,`via` 记 `共同标签: <共享的标签名>`。个人知识库量级下全表扫描完全够快,所以没有用 Cypher 做。
+2. **出链**——`(d)-[:LINKS]->(o)` 箭头朝右,表示"从 d **指向** o",即目标文档链出去的文档,`via` 记 `链接至: <标题>`。
+3. **入链**——`(d)<-[:LINKS]-(o)` 箭头方向反过来,表示"o **指向** d",即链到目标文档的文档,`via` 记 `链接自: <标题>`。
+
+`depth` 扩展:服务端把上面的查询当作"一步邻居",再对每个邻居重复一遍,得到第二层;`depth=2` 时第二层结果的 `via` 会加前缀 `经由「<第一层标题>」·`。全程用 `seen` 集合去重,同一文档只出现一次。
+
 ```json
 {
   "docs": [
@@ -641,6 +706,8 @@ Cypher:
 ```cypher
 MATCH (d:Doc {id: $id})-[r:MENTIONS]->(c:Concept) RETURN c.id, r.confidence, r.extraction_confidence, r.disambiguation_confidence, r.source, r.status, r.text
 ```
+
+**Cypher 解读**:`(d:Doc {id: $id})-[r:MENTIONS]->(c:Concept)` 表示"从目标文档出发、沿 MENTIONS 边、到达概念"——所以这条查询拿到的是**该文档提及的所有概念**。返回的字段混合了节点和边的信息:`c.id` 是概念 ID(节点),其余 `r.*` 全部是**边上的属性**——`confidence`(总置信度)、`extraction_confidence`(抽取置信度)、`disambiguation_confidence`(消歧置信度:这个"提及"指到这个概念有多有把握)、`source`(llm/human/rule)、`status`、`text`(原文里的表面词形)。这些置信度是概念管线做门控/去噪的依据。
 
 ```json
 {
@@ -696,6 +763,10 @@ CREATE (d)-[:MENTIONS {confidence: $conf, extraction_confidence: $econf,
   disambiguation_confidence: $dconf, source: $src, status: $status, text: $text}]->(c);
 ```
 
+**Cypher 解读**(分两步):
+1. **先清旧**:`WHERE r.source <> 'human'` 的意思是"只删来源**不是 human** 的边"——即 `llm` / `rule` 这类**机器产物**全部退场,而 `human`(人工确认)的边被排除在外、原样保留。为什么这么设计?LLM 每次重跑结果都可能变,机器产生的提及必须先清掉再写新的,否则会残留旧结果;但人工确认的提及是用户的投资,不能被机器重跑抹掉。
+2. **再写新**:`MERGE (c:Concept {id: $concept_id})` 先保证概念存在(没有就占位);`MATCH (d),(c) CREATE ...` 找到文档和概念,建一条 `MENTIONS` 边并把六个属性(置信度×3、来源、状态、表面词形)一次性写进**边**上。注意:这里用的是 `CREATE`(直接建新边),不是 `MERGE`——所以"半替换"的完整语义是"旧的非 human 边删光 + 新的照单全收"。
+
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `doc_id` | string | 必填 |
@@ -726,6 +797,8 @@ Cypher:
 MATCH (d:Doc {id: $id})-[r:MENTIONS]->() WHERE r.source <> 'human' DELETE r
 ```
 
+**Cypher 解读**:这条和上一个端点的"第一步"完全相同——删除目标文档所有**非 human 来源**的 MENTIONS 出边,`human` 边保留。区别只是它**只删不写**:调用场景是"重抽前失效旧 mention"——先把这个文档的机器提及清空,LLM 重新抽取后再调 `concepts/mentions` 写入新结果。文档不存在或本来就没有非 human 提及时不匹配任何边,幂等无副作用。
+
 ```json
 { "ok": true }
 ```
@@ -755,6 +828,13 @@ MATCH (a:Concept {id: $from})-[r:REL]->(b:Concept {id: $to}) WHERE r.type = $rel
 MATCH (a:Concept {id: $from}), (b:Concept {id: $to})
 CREATE (a)-[:REL {type: $rel, confidence: $conf, source: $src, description: $descr}]->(b);
 ```
+
+**Cypher 解读**(按行,每条边重复一次):
+1. 前两行 `MERGE (a ...) MERGE (b ...)` — 保证两端概念节点存在(占位)。
+2. `MATCH ... WHERE r.type = $rel DELETE r` — **幂等的关键**:先精确找到"从 a 到 b、类型也是 $rel"的旧边并删掉。`WHERE r.type = $rel` 保证了只删同类型的那条——如果 a→b 之间还有其他 `rel` 类型的边(比如同时有 `is_a` 和 `related_to`),它们不受影响。
+3. `CREATE (a)-[:REL {type: $rel, ...}]->(b)` — 建一条新边,四个属性(类型、置信度、来源、描述)写进边里。
+
+所以重复调用同样参数,结果是"删了旧的、建了新的",图里永远只有一条同组合的边——这就是**幂等增量写**的含义:重复执行不叠加、不重复。
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -792,6 +872,14 @@ MATCH (t:Theme {id: $id})-[r:INCLUDES]->() DELETE r;
 MERGE (d:Doc {id: $doc_id});
 MATCH (t:Theme {id: $t}), (d:Doc {id: $d}) CREATE (t)-[:INCLUDES {confidence: $conf}]->(d);
 ```
+
+**Cypher 解读**(和 `docs/upsert` 同构的"全量替换"):
+1. `MATCH (t:Theme {id: $id})-[r:INCLUDES]->() DELETE r` — 先把该主题的**全部** INCLUDES 出边删光。这是"全量替换"的"先清旧",意味着上次收录的文档全部退场。
+2. 每条 doc:`MERGE (d:Doc {id: $doc_id})` 保证文档节点存在,再 `MATCH (t),(d) CREATE (t)-[:INCLUDES {confidence: $conf}]->(d)` 建一条新的收录边。
+
+效果:本次入参里的文档成为主题的**新成员全集**,没传的文档自动被移出该主题。同一主题连续调用两次,第二次的结果完全覆盖第一次。
+
+> 提醒:Theme 相关功能当前为预留态,生产环境暂时不会走到这些语句。
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
