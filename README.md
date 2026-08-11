@@ -62,9 +62,12 @@ lensd 切换:`export LENS_GRAPH=http://localhost:8702`(dev.sh 已默认)。
 
 ## HTTP API
 
-📚 **完整 API 文档 → [docs/http-api.md](docs/http-api.md)**
+📚 **完整 API 文档 → [docs/http-api.md](docs/http-api.md)** · 📜 **OpenAPI 规范 → [docs/openapi.yaml](docs/openapi.yaml)**
 
-里面有:**19 个端点逐个的请求/响应示例、字段表、Cypher 与逐行解读**,外加**数据结构(DTO)总表**、**最小工作流**、**常见任务对照**。下面只是端点速查:
+- **人类阅读**(http-api.md):背景 / 领域概念 / 图 Schema / DTO 总表 / 最小工作流 / 常见任务对照,以及 19 个端点逐一的请求响应示例、字段表与 Cypher 解读。
+- **机器消费**(openapi.yaml):19 端点 + 19 个 DTO 的机器可读契约,可直接生成客户端或喂给 coding agent。
+
+下面只是端点速查:
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -115,6 +118,8 @@ src/
 configs/
 scripts/dev.sh
 docs/http-api.md        # 完整 API 文档(示例/字段/Cypher 解读/工作流)
+docs/openapi.yaml       # OpenAPI 契约(机器可读,供客户端生成/agent)
+docs/ROADMAP.md         # 通用 API 演进计划
 assets/readme/          # README 视觉资产
 ```
 
@@ -132,6 +137,10 @@ npm run typecheck
 - **启动**:仓库根 `./dev.sh start|status|stop` 一键起停(或本仓 `./scripts/dev.sh start`)。
 - **端口**:`:8702`,与 yk-lens 其它服务并列——lensd `:8700` · coverto `:8701` · yk-vector-ts `:8703`。
 - **数据**:图库目录默认 `./data/ladybug`(可用 `LENS_GRAPH_DATA` 覆盖);本进程独占图库文件,禁止第二个进程打开同一目录。
+
+## Roadmap
+
+通用 API 的演进计划——**非通用(业务语义)API 不动**,只补通用能力:任意只读查询、通用边 CRUD、批量 / 分页、节点局部更新、孤儿节点清理、细粒度统计。优先级与进度见 [docs/ROADMAP.md](docs/ROADMAP.md)。
 
 ## 已知注意点
 

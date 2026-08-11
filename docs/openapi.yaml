@@ -1,0 +1,554 @@
+openapi: 3.0.3
+info:
+  title: yk-lens-graph-store-ts HTTP API
+  description: |
+    yk-lens 的知识图谱存储层 — 独立的 HTTP 图服务(:8702),读写知识图谱(Doc / Concept / Theme
+    与 LINKS / HAS_PARENT / MENTIONS / REL / INCLUDES / CHILD_OF 六种关系)。
+
+    任何客户端都可直接调用,服务不依赖其它系统。领域概念、背景与 Cypher 详解见
+    docs/http-api.md。本文件为机器可读契约(供客户端生成 / agent 消费)。
+  version: 1.0.0
+servers:
+  - url: http://localhost:8702
+security: []
+tags:
+  - name: health
+    description: 健康 / 状态
+  - name: docs
+    description: Doc 节点与 doc→doc 规则边
+  - name: concepts
+    description: Concept 节点与 MENTIONS / REL 边
+  - name: themes
+    description: Theme 主题(预留)
+  - name: admin
+    description: 运维
+
+paths:
+  # ---------------- health / status ----------------
+  /v1/health:
+    get:
+      tags: [health]
+      summary: 可达性探测
+      responses:
+        "200":
+          description: 图库可达
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthResponse" }
+        "503":
+          description: 图库故障(查询失败)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthResponse" }
+  /v1/status:
+    get:
+      tags: [health]
+      summary: 后端状态(backend / reachable / docs)
+      responses:
+        "200":
+          description: 状态详情(始终 200,如实上报可达性)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatusResponse" }
+
+  # ---------------- docs ----------------
+  /v1/graph/docs/upsert:
+    post:
+      tags: [docs]
+      summary: 全量替换一篇文档的图关系(节点属性覆盖 + 规则出边先删后建)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpsertDocRequest" }
+      responses:
+        "200":
+          description: 写入成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkResponse" }
+        "400":
+          description: 缺 doc_id
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /v1/graph/docs/{id}:
+    delete:
+      tags: [docs]
+      summary: 删除文档节点及全部出/入关系边(DETACH DELETE)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: 删除成功(不存在同样 ok,幂等)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkResponse" }
+  /v1/graph/docs/remove-with-stats:
+    post:
+      tags: [docs]
+      summary: 带统计的删除,返回存在性与删除前边数
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RemoveWithStatsRequest" }
+      responses:
+        "200":
+          description: 删除结果
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RemoveDocStats" }
+        "400":
+          description: 缺 doc_id
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /v1/graph/docs/{id}/related:
+    get:
+      tags: [docs]
+      summary: depth 层内关联文档(共同标签 / 出链 / 入链)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: depth
+          in: query
+          required: false
+          description: 层数,钳制在 1~2
+          schema: { type: integer, default: 1, minimum: 1, maximum: 2 }
+      responses:
+        "200":
+          description: 关联文档列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  docs:
+                    type: array
+                    items: { $ref: "#/components/schemas/RelatedDoc" }
+  /v1/graph/docs/{id}/concepts:
+    get:
+      tags: [concepts]
+      summary: 该文档的全部 MENTIONS 出边(提及的概念)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: 提及列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mentions:
+                    type: array
+                    items: { $ref: "#/components/schemas/MentionEdge" }
+  /v1/graph/doc-edges:
+    get:
+      tags: [docs]
+      summary: 全部 doc→doc 规则边(LINKS + HAS_PARENT)
+      responses:
+        "200":
+          description: 边清单
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  edges:
+                    type: array
+                    items: { $ref: "#/components/schemas/DocEdge" }
+  /v1/graph/doc-tags:
+    get:
+      tags: [docs]
+      summary: 全部 Doc 节点的 tags(按文档分组)
+      responses:
+        "200":
+          description: 标签分组
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tags:
+                    type: object
+                    additionalProperties:
+                      type: array
+                      items: { type: string }
+
+  # ---------------- concepts ----------------
+  /v1/graph/concepts/upsert:
+    post:
+      tags: [concepts]
+      summary: Upsert 概念词条(按 concept_id 幂等;空 ID 静默忽略)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Concept" }
+      responses:
+        "200":
+          description: 写入成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkResponse" }
+  /v1/graph/concepts/{id}:
+    get:
+      tags: [concepts]
+      summary: 按 ID 取概念
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: 概念详情
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Concept" }
+        "404":
+          description: 概念不存在
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /v1/graph/concepts:
+    get:
+      tags: [concepts]
+      summary: 列出全部概念(顺序不保证,无分页)
+      responses:
+        "200":
+          description: 概念列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  concepts:
+                    type: array
+                    items: { $ref: "#/components/schemas/Concept" }
+  /v1/graph/concepts/mentions:
+    post:
+      tags: [concepts]
+      summary: 半替换某文档的 MENTIONS 出边(删非 human,写新边;human 保留)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PatchMentionsRequest" }
+      responses:
+        "200":
+          description: 写入成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkResponse" }
+        "400":
+          description: 缺 doc_id
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /v1/graph/concepts/mentions/llm:
+    delete:
+      tags: [concepts]
+      summary: 删除某文档的全部非 human MENTIONS 出边(只删不写)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RemoveLLMMentionsRequest" }
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkResponse" }
+        "400":
+          description: 缺 doc_id
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /v1/graph/concepts/relations:
+    post:
+      tags: [concepts]
+      summary: 幂等增量写概念 REL 边(同 from→to→rel 先删后建)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PatchRelationsRequest" }
+      responses:
+        "200":
+          description: 写入成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkResponse" }
+  /v1/graph/relations:
+    get:
+      tags: [concepts]
+      summary: 列出全部概念 REL 边
+      responses:
+        "200":
+          description: 关系清单
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  relations:
+                    type: array
+                    items: { $ref: "#/components/schemas/ConceptRel" }
+
+  # ---------------- themes (预留) ----------------
+  /v1/graph/themes/upsert:
+    post:
+      tags: [themes]
+      summary: "Upsert 主题(预留:当前业务尚未写入 Theme 数据)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Theme" }
+      responses:
+        "200":
+          description: 写入成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkResponse" }
+  /v1/graph/themes/membership:
+    post:
+      tags: [themes]
+      summary: "全量替换主题的 doc 成员(预留)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PatchThemeMembershipRequest" }
+      responses:
+        "200":
+          description: 写入成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkResponse" }
+        "400":
+          description: 缺 theme_id
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  # ---------------- admin ----------------
+  /v1/admin/clear:
+    post:
+      tags: [admin]
+      summary: 清库重建(DROP 全部表后重建 schema,数据不可恢复)
+      responses:
+        "200":
+          description: 清库完成
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkResponse" }
+
+components:
+  securitySchemes: {}
+  schemas:
+    OkResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean, example: true }
+    ErrorResponse:
+      type: object
+      required: [ok, error]
+      properties:
+        ok: { type: boolean, example: false }
+        error: { type: string, example: "必填：doc_id" }
+    HealthResponse:
+      type: object
+      required: [ok, backend]
+      properties:
+        ok: { type: boolean, example: true }
+        backend: { type: string, example: "ladybug" }
+    StatusResponse:
+      type: object
+      required: [backend, reachable, docs]
+      properties:
+        backend: { type: string, example: "ladybug" }
+        reachable: { type: boolean, example: true }
+        docs: { type: integer, example: 128 }
+    DocLink:
+      type: object
+      properties:
+        target_id: { type: string, description: "目标文档 ID;空值/自环跳过" }
+        rel:
+          type: string
+          default: link
+          enum: [link, parent]
+          description: "parent → HAS_PARENT,其余 → LINKS"
+    UpsertDocRequest:
+      type: object
+      required: [doc_id]
+      properties:
+        doc_id: { type: string }
+        project: { type: string }
+        path: { type: string }
+        title: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+          description: "逗号拼接存为 Doc 节点属性"
+        links:
+          type: array
+          items: { $ref: "#/components/schemas/DocLink" }
+    RemoveWithStatsRequest:
+      type: object
+      required: [doc_id]
+      properties:
+        doc_id: { type: string }
+    RemoveDocStats:
+      type: object
+      required: [existed, edges]
+      properties:
+        existed: { type: boolean }
+        edges: { type: integer, description: "删除前的关系边数(出+入)" }
+    DocEdge:
+      type: object
+      required: [from, to, rel]
+      properties:
+        from: { type: string }
+        to: { type: string }
+        rel:
+          type: string
+          enum: [link, parent]
+    RelatedDoc:
+      type: object
+      required: [doc_id, title, path, via, depth]
+      properties:
+        doc_id: { type: string }
+        title: { type: string }
+        path: { type: string }
+        via: { type: string, description: "共同标签 / 链接至 / 链接自" }
+        depth: { type: integer, description: "层数 1~2" }
+    MentionEdge:
+      type: object
+      required: [concept_id]
+      properties:
+        concept_id: { type: string }
+        confidence:
+          type: number
+          default: 0
+          description: 总置信度
+        extraction_confidence:
+          type: number
+          default: 0
+        disambiguation_confidence:
+          type: number
+          default: 0
+          description: 消歧置信度
+        source:
+          type: string
+          default: llm
+          enum: [llm, human, rule]
+        status:
+          type: string
+          default: active
+          enum: [active, soft, pending]
+        text:
+          type: string
+          description: 表面词形(surface form)
+    Concept:
+      type: object
+      required: [concept_id]
+      properties:
+        concept_id: { type: string }
+        name: { type: string }
+        slug: { type: string }
+        types:
+          type: array
+          items: { type: string }
+          description: "逗号拼接存储"
+        description: { type: string }
+        source:
+          type: string
+          default: human
+          enum: [rule, llm, human]
+        status:
+          type: string
+          default: active
+          enum: [active, merged, deprecated]
+    ConceptRel:
+      type: object
+      required: [from, to]
+      properties:
+        from: { type: string }
+        to: { type: string }
+        rel:
+          type: string
+          default: related_to
+        confidence:
+          type: number
+          default: 0
+        source:
+          type: string
+          default: llm
+        description:
+          type: string
+          description: 关系描述(图边标签)
+    Theme:
+      type: object
+      required: [theme_id]
+      properties:
+        theme_id: { type: string }
+        title: { type: string }
+        slug: { type: string }
+        confidence:
+          type: number
+          default: 0
+        source:
+          type: string
+          default: llm
+        parent_id:
+          type: string
+          description: "CHILD_OF 目标;缺省不动既有层级边"
+    ThemeDocEdge:
+      type: object
+      required: [doc_id]
+      properties:
+        doc_id: { type: string }
+        confidence: { type: number, default: 0 }
+        path: { type: string }
+    PatchMentionsRequest:
+      type: object
+      required: [doc_id, edges]
+      properties:
+        doc_id: { type: string }
+        edges:
+          type: array
+          items: { $ref: "#/components/schemas/MentionEdge" }
+    RemoveLLMMentionsRequest:
+      type: object
+      required: [doc_id]
+      properties:
+        doc_id: { type: string }
+    PatchRelationsRequest:
+      type: object
+      required: [edges]
+      properties:
+        edges:
+          type: array
+          items: { $ref: "#/components/schemas/ConceptRel" }
+    PatchThemeMembershipRequest:
+      type: object
+      required: [theme_id, docs]
+      properties:
+        theme_id: { type: string }
+        docs:
+          type: array
+          items: { $ref: "#/components/schemas/ThemeDocEdge" }
