@@ -2,6 +2,11 @@
   <img src="./assets/readme/hero.svg" width="100%" alt="yk-graph-ts — yk-lens 的知识图谱存储层,TypeScript + Ladybug 官方 SDK,经 HTTP 提供图读写">
 </p>
 
+<p align="center">
+  <img src="https://img.shields.io/badge/status-active-brightgreen" alt="status: active">
+  <img src="https://img.shields.io/badge/version-1.0.0-007ec6" alt="version 1.0.0">
+</p>
+
 **yk-lens 的知识图谱存储层**——用 TypeScript + Ladybug 官方 SDK(`@ladybugdb/core` ^0.19.1)实现,以 HTTP 服务(`:8702`)向 lensd 提供 Doc 规则图 / Concept / Theme 的图读写。
 
 > 只有 **lensd** 能调用;前端 / Agent 禁止直连。本进程是图库文件的唯一打开者(单写者)。
@@ -41,6 +46,8 @@ curl -s localhost:8702/v1/health
 lensd 切换:`export LENS_GRAPH=http://localhost:8702`(dev.sh 已默认)。
 
 ## HTTP 契约
+
+每个端点的请求 / 响应 / 错误示例见 [docs/http-api.md](./docs/http-api.md)。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -88,6 +95,7 @@ src/
   store/graphStore.ts   # Ladybug 官方 SDK(DDL + 18 组方法)
 configs/
 scripts/dev.sh
+docs/http-api.md       # HTTP API 详细用法
 assets/readme/          # README 视觉资产
 ```
 
@@ -97,6 +105,14 @@ assets/readme/          # README 视觉资产
 npm test          # vitest:DDL 幂等 + 每方法 round-trip + 旧库迁移 + clear(临时数据目录)
 npm run typecheck
 ```
+
+## 现状
+
+- **阶段**:yk-lens 桌面阶段现行服务;是 lensd 图访问的唯一入口,前端 / Agent 一律不直连。
+- **版本**:1.0.0(Node ≥ 20)。
+- **启动**:仓库根 `./dev.sh start|status|stop` 一键起停(或本仓 `./scripts/dev.sh start`)。
+- **端口**:`:8702`,与 yk-lens 其它服务并列——lensd `:8700` · coverto `:8701` · yk-vector-ts `:8703`。
+- **数据**:图库目录默认 `./data/ladybug`(可用 `LENS_GRAPH_DATA` 覆盖);本进程独占图库文件,禁止第二个进程打开同一目录。
 
 ## 已知注意点
 
