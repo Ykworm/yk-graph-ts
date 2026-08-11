@@ -1,86 +1,71 @@
-# yk-graph-ts
+<p align="center">
+  <img src="./assets/readme/hero.svg" width="100%" alt="yk-graph-ts — yk-lens 的知识图谱存储层,TypeScript + Ladybug 官方 SDK,经 HTTP 提供图读写">
+</p>
 
-**一句话**：给 lensd 用的 **图服务**（TypeScript + **Ladybug 官方 SDK** `@ladybugdb/core`）——Doc 规则图 / Concept / Theme 的图读写，替代 lensd 里的 cgo 绑定（`system_ladybug` + `lib-ladybug`）。
+**yk-lens 的知识图谱存储层**——用 TypeScript + Ladybug 官方 SDK(`@ladybugdb/core` ^0.19.1)重写原 Go/cgo 图存储,以 HTTP 服务(`:8702`)向 lensd 提供 Doc 规则图 / Concept / Theme 的图读写。
 
-HTTP 契约与 [`graph_ladybug.go`](../yk-lens-go/internal/store/graph_ladybug.go) 的 Go 方法 **1:1 对应**（见 [docs/11-GRAPH-SERVICE-SPLIT.md](../yk-lens-go/docs/11-GRAPH-SERVICE-SPLIT.md)）。
+> 只有 **lensd** 能调用;前端 / Agent 禁止直连。本进程是图库文件的唯一打开者(单写者)。
 
----
+## 图模型
 
-## 为什么是 TS
+Ladybug 图库中的三张节点表和六种关系:
 
-Ladybug **官方 TS SDK** 是 Node-API 原生模块（自带 `lbug.d.ts`，含 darwin-arm64 平台包），与现网 `lib-ladybug/liblbug.0.19.1.dylib` 同版本（0.19.1），**可直接打开现网数据目录，零迁移**。模式与 `yk-vector-ts/`（LanceDB TS SDK + HTTP）完全一致。
+| 节点 | 关系 | 语义 |
+|------|------|------|
+| `Doc` | `LINKS` | 文档间规则链接 |
+| `Doc` | `MENTIONS` | 文档提及 Concept |
+| `Concept` | `REL` | 概念间关系 |
+| `Concept` | `MENTIONS` | 概念被文档提及 |
+| `Theme` | `INCLUDES` | 主题聚合文档 |
+| `Doc` | `HAS_PARENT` / `CHILD_OF` | 文档层级(旧库迁移保留) |
 
----
+## 为什么这么设计
 
-## 先记住
+- **官方 SDK,零迁移**——`@ladybugdb/core` 是 Node-API 原生模块,与现网 `lib-ladybug/liblbug.0.19.1.dylib` 同版本(0.19.1),可直接打开现网数据目录。
+- **参数化 Cypher**——全部走 `prepare/execute`,不再字符串拼接(唯一与 Go 实现的语义差异)。
+- **单写者 + 串行队列**——本进程独占图库文件;单连接非线程安全,所有操作经 promise 串行队列(对齐 Go 侧互斥锁)。
+- **幂等 DDL + 旧库迁移**——启动自动建表 / 迁移,可安全重入。
+- **契约 1:1 对齐**——18 组方法语义对应原 Go 实现 `graph_ladybug.go`,HTTP 端点逐一对齐。
 
-| 要点 | 说明 |
-|------|------|
-| 默认端口 | **`:8702`** |
-| 谁可以调 | **只有 lensd**（HTTP）。前端 / Agent **禁止**直连 |
-| 存储 | Ladybug 本地目录（`db_path`）；默认 `./data/ladybug`，可直接指向现网 `yk-lens-go/data/ladybug` |
-| 单写者 | **本进程是图库文件唯一打开者**；lensd 不再碰图文件。禁止第二个进程开同一目录 |
-| Cypher | 全部在本服务内、**参数化查询**；写操作串行（单连接） |
-| 权威文档 | [`docs/11-GRAPH-SERVICE-SPLIT.md`](../yk-lens-go/docs/11-GRAPH-SERVICE-SPLIT.md) |
-
----
-
-## 快速启动
+## 快速开始
 
 ```bash
-cd yk-graph-ts
 npm install
 
 cp configs/yk-graph-ts.example.yaml configs/yk-graph-ts.yaml
-# 用 IDE 打开 configs/yk-graph-ts.yaml，把 db_path 指到现网数据目录（或保持默认）
+# 编辑 db_path(默认 ./data/ladybug,可直接指到现网数据目录)
 
-npm run dev
-# 或
-./scripts/dev.sh start
+npm run dev          # 或 ./scripts/dev.sh start
+curl -s localhost:8702/v1/health
 ```
 
-生产构建：
+lensd 切换:`export LENS_GRAPH=http://localhost:8702`(dev.sh 已默认)。
 
-```bash
-npm run build
-node dist/index.js --config configs/yk-graph-ts.yaml
-```
+## HTTP 契约
 
-lensd 切换：
-
-```bash
-export LENS_GRAPH=http://localhost:8702   # dev.sh 已默认；手动起 lensd 时用 -graph
-```
-
----
-
-## HTTP
-
-| 方法 | 路径 | 说明（对齐 Go 方法） |
+| 方法 | 路径 | 说明 |
 |------|------|------|
 | `GET` | `/v1/health` | 可达性 |
-| `GET` | `/v1/status` | `BackendStatus`（backend/reachable/docs） |
-| `POST` | `/v1/graph/docs/upsert` | `UpsertDoc`：全量替换 doc 图关系（tags + 规则边） |
-| `DELETE` | `/v1/graph/docs/:id` | `RemoveDoc` |
-| `POST` | `/v1/graph/docs/remove-with-stats` | `RemoveDocWithStats` → `{existed, edges}` |
-| `GET` | `/v1/graph/docs/:id/related?depth=` | `Related`（depth 1~2） |
-| `GET` | `/v1/graph/docs/:id/concepts` | `RelatedConcepts`（MENTIONS 邻居） |
-| `GET` | `/v1/graph/doc-edges` | `ListDocEdges` |
-| `GET` | `/v1/graph/doc-tags` | `ListDocTags` |
-| `POST` | `/v1/graph/concepts/upsert` | `UpsertConcept` |
-| `GET` | `/v1/graph/concepts/:id` | `GetConcept`（404 = 不存在） |
-| `GET` | `/v1/graph/concepts` | `ListConcepts` |
-| `POST` | `/v1/graph/concepts/mentions` | `PatchMentions`（只替换 llm，human 保留） |
-| `DELETE` | `/v1/graph/concepts/mentions/llm` | `RemoveLLMMentions`（body: `doc_id`） |
-| `POST` | `/v1/graph/concepts/relations` | `PatchRelations` |
-| `GET` | `/v1/graph/relations` | `ListRelations` |
-| `POST` | `/v1/graph/themes/upsert` | `UpsertTheme` |
-| `POST` | `/v1/graph/themes/membership` | `PatchThemeMembership` |
-| `POST` | `/v1/admin/clear` | 清库（DROP 全表重建；供 `concept-clear`） |
+| `GET` | `/v1/status` | `BackendStatus`(backend/reachable/docs) |
+| `POST` | `/v1/graph/docs/upsert` | 全量替换 doc 图关系(tags + 规则边) |
+| `DELETE` | `/v1/graph/docs/:id` | 删除 doc 及其全部关系 |
+| `POST` | `/v1/graph/docs/remove-with-stats` | 带统计删除 → `{existed, edges}` |
+| `GET` | `/v1/graph/docs/:id/related?depth=` | depth 1~2 关联文档 |
+| `GET` | `/v1/graph/docs/:id/concepts` | 该 doc 的 MENTIONS 邻居 |
+| `GET` | `/v1/graph/doc-edges` | 全部 doc→doc 规则边 |
+| `GET` | `/v1/graph/doc-tags` | 全部 Doc 节点 tags |
+| `POST` | `/v1/graph/concepts/upsert` | upsert concept |
+| `GET` | `/v1/graph/concepts/:id` | 取 concept(404 = 不存在) |
+| `GET` | `/v1/graph/concepts` | 全部 concepts |
+| `POST` | `/v1/graph/concepts/mentions` | 只替换该 doc 的 llm mentions(human 保留) |
+| `DELETE` | `/v1/graph/concepts/mentions/llm` | 失效该 doc 的 llm MENTIONS(body: `doc_id`) |
+| `POST` | `/v1/graph/concepts/relations` | 幂等替换 concept REL 边 |
+| `GET` | `/v1/graph/relations` | 全部 concept REL 边 |
+| `POST` | `/v1/graph/themes/upsert` | upsert theme |
+| `POST` | `/v1/graph/themes/membership` | 替换 theme 的 doc 成员 |
+| `POST` | `/v1/admin/clear` | 清库(DROP 全表重建) |
 
 ```bash
-curl -s localhost:8702/v1/health
-
 curl -s -X POST localhost:8702/v1/graph/docs/upsert -H 'Content-Type: application/json' -d '{
   "doc_id": "01HQEXAMPLE",
   "project": "inbox",
@@ -93,34 +78,33 @@ curl -s -X POST localhost:8702/v1/graph/docs/upsert -H 'Content-Type: applicatio
 curl -s "localhost:8702/v1/graph/docs/01HQEXAMPLE/related?depth=1"
 ```
 
----
-
 ## 目录
 
 ```text
 src/
   index.ts              # 入口
   config.ts             # YAML + env
-  types.ts              # DTO（JSON 字段与 Go struct 对齐）
+  types.ts              # DTO(JSON 字段与 Go struct 对齐)
   api/server.ts         # Express HTTP
-  store/graphStore.ts   # Ladybug 官方 SDK（DDL + 18 组方法）
+  store/graphStore.ts   # Ladybug 官方 SDK(DDL + 18 组方法)
 configs/
 scripts/dev.sh
+assets/readme/          # README 视觉资产
 ```
-
----
 
 ## 测试
 
 ```bash
-npm test          # vitest：DDL 幂等 + 每方法 round-trip + 旧库迁移 + clear（临时数据目录）
+npm test          # vitest:DDL 幂等 + 每方法 round-trip + 旧库迁移 + clear(临时数据目录)
 npm run typecheck
 ```
 
----
-
 ## 已知注意点
 
-- `@ladybugdb/core` SDK 较年轻（2025-10 Kuzu 归档后 fork）；升级版本需谨慎（重跑冒烟）。
-- 构造 `Database` 需显式 `maxDBSize`（默认 8TB mmap 在受限环境失败，见 `graphStore.ts` 注释）。
-- 参数名避免与 Cypher 保留字冲突（如 `DESC`）；`description` 用 `$descr`。
+- `@ladybugdb/core` SDK 较年轻(2025-10 Kuzu 归档后 fork);升级需谨慎(重跑冒烟)。
+- 构造 `Database` 需显式 `maxDBSize`(默认 8TB mmap 在受限环境失败,见 `graphStore.ts` 注释)。
+- 参数名避免与 Cypher 保留字冲突(如 `DESC`);`description` 用 `$descr`。
+
+## License
+
+UNLICENSED
