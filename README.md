@@ -2,7 +2,7 @@
   <img src="./assets/readme/hero.svg" width="100%" alt="yk-graph-ts — yk-lens 的知识图谱存储层,TypeScript + Ladybug 官方 SDK,经 HTTP 提供图读写">
 </p>
 
-**yk-lens 的知识图谱存储层**——用 TypeScript + Ladybug 官方 SDK(`@ladybugdb/core` ^0.19.1)重写原 Go/cgo 图存储,以 HTTP 服务(`:8702`)向 lensd 提供 Doc 规则图 / Concept / Theme 的图读写。
+**yk-lens 的知识图谱存储层**——用 TypeScript + Ladybug 官方 SDK(`@ladybugdb/core` ^0.19.1)实现,以 HTTP 服务(`:8702`)向 lensd 提供 Doc 规则图 / Concept / Theme 的图读写。
 
 > 只有 **lensd** 能调用;前端 / Agent 禁止直连。本进程是图库文件的唯一打开者(单写者)。
 
@@ -21,11 +21,10 @@ Ladybug 图库中的三张节点表和六种关系:
 
 ## 为什么这么设计
 
-- **官方 SDK,零迁移**——`@ladybugdb/core` 是 Node-API 原生模块,与现网 `lib-ladybug/liblbug.0.19.1.dylib` 同版本(0.19.1),可直接打开现网数据目录。
-- **参数化 Cypher**——全部走 `prepare/execute`,不再字符串拼接(唯一与 Go 实现的语义差异)。
-- **单写者 + 串行队列**——本进程独占图库文件;单连接非线程安全,所有操作经 promise 串行队列(对齐 Go 侧互斥锁)。
+- **官方 SDK,零迁移**——`@ladybugdb/core` 是 Ladybug 官方 Node-API 原生模块,可直接打开已有数据目录,无需转换。
+- **参数化 Cypher**——全部走 `prepare/execute` 参数化查询,不拼接 Cypher 字符串。
+- **单写者 + 串行队列**——本进程独占图库文件;单连接非线程安全,所有操作经 promise 串行队列串行化。
 - **幂等 DDL + 旧库迁移**——启动自动建表 / 迁移,可安全重入。
-- **契约 1:1 对齐**——18 组方法语义对应原 Go 实现 `graph_ladybug.go`,HTTP 端点逐一对齐。
 
 ## 快速开始
 
@@ -46,7 +45,7 @@ lensd 切换:`export LENS_GRAPH=http://localhost:8702`(dev.sh 已默认)。
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | `GET` | `/v1/health` | 可达性 |
-| `GET` | `/v1/status` | `BackendStatus`(backend/reachable/docs) |
+| `GET` | `/v1/status` | 后端状态(backend/reachable/docs) |
 | `POST` | `/v1/graph/docs/upsert` | 全量替换 doc 图关系(tags + 规则边) |
 | `DELETE` | `/v1/graph/docs/:id` | 删除 doc 及其全部关系 |
 | `POST` | `/v1/graph/docs/remove-with-stats` | 带统计删除 → `{existed, edges}` |
@@ -84,7 +83,7 @@ curl -s "localhost:8702/v1/graph/docs/01HQEXAMPLE/related?depth=1"
 src/
   index.ts              # 入口
   config.ts             # YAML + env
-  types.ts              # DTO(JSON 字段与 Go struct 对齐)
+  types.ts              # DTO(请求 / 响应结构)
   api/server.ts         # Express HTTP
   store/graphStore.ts   # Ladybug 官方 SDK(DDL + 18 组方法)
 configs/
@@ -107,4 +106,4 @@ npm run typecheck
 
 ## License
 
-UNLICENSED
+[MIT](./LICENSE)

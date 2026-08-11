@@ -20,7 +20,7 @@
     "graph",
     "yk-lens"
   ],
-  "license": "UNLICENSED",
+  "license": "MIT",
   "dependencies": {
     "@ladybugdb/core": "^0.19.1",
     "express": "^5.1.0",
