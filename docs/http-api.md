@@ -51,6 +51,10 @@
 
 关键机制:
 
+- **规则边 vs LLM 语义边**:图里的边按产生方式分两类——
+  - **规则边**(`LINKS` / `HAS_PARENT`):由文档内容**确定性投影**(wiki 链接、`parentId`、标签),重跑结果不变、可从文档无损恢复;
+  - **LLM 语义边**(`MENTIONS` / `REL`):LLM 推断、带置信度,重抽可能变化。
+  两者的区分依据是边的 `source` 字段(术语与设计决策见 [design-inconsistency-audit.md](../../yk-lens-go/docs/reports/design-inconsistency-audit.md) §6.2 / §3.3,术语管理遵循 [06-MERGED-SPEC-EXTRACT-LEDGER 词汇控制表](../../yk-lens-go/docs/concept-docs/06-MERGED-SPEC-EXTRACT-LEDGER-v1.0.md) §2——先入表再使用,不新造词)。
 - **机器产物 vs 人工产物**:MENTIONS / REL 边标 `source`(`llm` / `human` / `rule`)。机器产出的边在重跑概念抽取流程时被**先删后建**;`human` 边是人工确认的投资,**永远保留**。
 - **占位节点**:写入时目标节点还没入库(如链接指向的文档、提及指向的概念),服务自动建空节点,属性留待后续补全。
 - **唯一写入方**:图数据由上层概念抽取流程写入,服务本身不"灌图"。
