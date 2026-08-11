@@ -1,0 +1,36 @@
+{
+  "name": "yk-graph-ts",
+  "version": "1.0.0",
+  "description": "yk-lens 图服务（TypeScript + @ladybugdb/core 官方 SDK）— 契约对齐 graph_ladybug.go，供 lensd HTTP 调用",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "ladybug",
+    "graph",
+    "yk-lens"
+  ],
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@ladybugdb/core": "^0.19.1",
+    "express": "^5.1.0",
+    "yaml": "^2.8.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.2.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.0"
+  }
+}
