@@ -2,23 +2,23 @@
 
 ## 目录
 
-- [背景:图谱是怎么来的](#背景图谱是怎么来的)
-- [领域概念](#领域概念)
-- [图 Schema](#图-schema)
-- [通用约定](#通用约定)
-- [数据结构(DTO)](#数据结构dto)
-- [最小工作流(Quickstart)](#最小工作流quickstart)
-- [常见任务对照](#常见任务对照)
-- [Part A — Common(通用图操作)](#part-a-common通用图操作)
-- [Part B — 业务绑定(概念管线语义)](#part-b-业务绑定概念管线语义)
+- [背景:图谱是怎么来的](#background)
+- [领域概念](#concepts)
+- [图 Schema](#schema)
+- [通用约定](#conventions)
+- [数据结构(DTO)](#dto)
+- [最小工作流(Quickstart)](#quickstart)
+- [常见任务对照](#tasks)
+- [Part A — Common(通用图操作)](#part-a)
+- [Part B — 业务绑定(概念管线语义)](#part-b)
 
-图服务 HTTP 契约(`:8702`),yk-lens 的图存储层。开始读 API 之前,先看[背景:图谱是怎么来的](#背景图谱是怎么来的)与[图 Schema](#图-schema)——图里的节点和边来自一套特定的知识建模,不是通用图数据库概念。
+图服务 HTTP 契约(`:8702`),yk-lens 的图存储层。开始读 API 之前,先看[背景:图谱是怎么来的](#background)与[图 Schema](#schema)——图里的节点和边来自一套特定的知识建模,不是通用图数据库概念。
 
 所有端点仅允许 **lensd** 调用;参数化 Cypher 全部在服务内完成,外部只传 JSON。
 
 ---
 
-## 背景:图谱是怎么来的
+## <a id="background"></a>背景:图谱是怎么来的
 
 一个知识库会不断积累笔记。如果只把它们当文件存着,笔记之间的联系就丢失了。于是系统在存储之外,把内容组织成一张**关系网络**:
 
@@ -31,7 +31,7 @@
 
 ---
 
-## 领域概念
+## <a id="concepts"></a>领域概念
 
 图里只有三样东西:**文档、概念、主题**;它们之间的关系构成了图谱。术语分三类:**node**(节点)、**edge**(关系边)、**property**(节点/边上的字段)。
 
@@ -62,7 +62,7 @@
 
 ---
 
-## 图 Schema
+## <a id="schema"></a>图 Schema
 
 ### 节点表
 
@@ -85,7 +85,7 @@
 
 ---
 
-## 通用约定
+## <a id="conventions"></a>通用约定
 
 - **基础路径**:`http://localhost:8702`;请求体一律 `application/json`(上限 16MB)。
 - **统一错误格式**:`{ "ok": false, "error": "<消息>" }` — 缺必填字段 → `400`,其余异常 → `500`。
@@ -95,7 +95,7 @@
 
 ---
 
-## 数据结构(DTO)
+## <a id="dto"></a>数据结构(DTO)
 
 请求 / 响应对象集中定义。字段标 `?` 为可选;**必填/缺省**列给出服务端的校验与默认补全规则(与实现一致)。对象按字母序:
 
@@ -203,7 +203,7 @@
 
 ---
 
-## 最小工作流(Quickstart)
+## <a id="quickstart"></a>最小工作流(Quickstart)
 
 完整跑一遍:录两篇笔记 → 建概念 → 记提及 → 建概念关系 → 查看图谱。**顺序自由**(占位节点机制让先建 doc 或先建 concept 都行),下面是推荐的阅读顺序。
 
@@ -250,7 +250,7 @@ curl -s "localhost:8702/v1/graph/docs/doc-a/related?depth=1"
 
 ---
 
-## 常见任务对照
+## <a id="tasks"></a>常见任务对照
 
 | 我想… | 调用 |
 |--------|------|
@@ -269,7 +269,7 @@ curl -s "localhost:8702/v1/graph/docs/doc-a/related?depth=1"
 
 ---
 
-# Part A — Common(通用图操作)
+# <a id="part-a"></a>Part A — Common(通用图操作)
 
 节点与边的增删查,不承载概念管线规则。
 
@@ -582,7 +582,7 @@ MATCH (a:Concept)-[r:REL]->(b:Concept) RETURN a.id, b.id, r.type, r.confidence, 
 
 Upsert 主题;携带 `parent_id` 时维护 `CHILD_OF` 层级边(先删旧再建);未携带则不动既有层级边。
 
-> ⚠️ 预留:当前业务尚未调用此接口,图库中暂不会有 Theme 数据(见[领域概念](#领域概念))。
+> ⚠️ 预留:当前业务尚未调用此接口,图库中暂不会有 Theme 数据(见[领域概念](#concepts))。
 
 ```bash
 curl -s -X POST localhost:8702/v1/graph/themes/upsert \
@@ -649,7 +649,7 @@ DROP TABLE Doc; DROP TABLE Concept; DROP TABLE Theme;
 
 ---
 
-# Part B — 业务绑定(概念管线语义)
+# <a id="part-b"></a>Part B — 业务绑定(概念管线语义)
 
 这些端点承载 yk-lens 概念管线的**规则**,不是通用图操作——`source=human` 保留、LLM 重抽先清后写、关联语义计算等。
 
@@ -856,7 +856,7 @@ CREATE (a)-[:REL {type: $rel, confidence: $conf, source: $src, description: $des
 
 **全量替换**主题的 doc 成员(INCLUDES 出边先删后建)。
 
-> ⚠️ 预留:当前业务尚未调用此接口(见[领域概念](#领域概念))。
+> ⚠️ 预留:当前业务尚未调用此接口(见[领域概念](#concepts))。
 
 ```bash
 curl -s -X POST localhost:8702/v1/graph/themes/membership \
