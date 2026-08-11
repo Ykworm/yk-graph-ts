@@ -11,18 +11,33 @@
 
 > 只有 **lensd** 能调用;前端 / Agent 禁止直连。本进程是图库文件的唯一打开者(单写者)。
 
+## 背景:图谱是怎么来的
+
+一个知识库会不断积累笔记。如果只把它们当文件存着,笔记之间的联系就丢了。于是系统把内容组织成一张**关系网络**:每篇笔记成为图里的"文档"节点;系统(结合人工)从文档中提炼出反复出现的"概念",统一收进词表;文档、概念、主题之间,由各种**关系**连接起来。
+
+图里的节点、关系、属性分别是什么、从哪来(规则边 vs LLM 语义边),见 [API 文档 → 领域概念](docs/http-api.md#concepts)。
+
 ## 图模型
 
-Ladybug 图库中的三张节点表和六种关系:
+三张节点表、六种关系、两个关键属性:
 
-| 节点 | 关系 | 语义 |
+| 类别 | 术语 | 说明 |
 |------|------|------|
-| `Doc` | `LINKS` | 文档间规则链接 |
-| `Doc` | `MENTIONS` | 文档提及 Concept |
-| `Concept` | `REL` | 概念间关系 |
-| `Concept` | `MENTIONS` | 概念被文档提及 |
-| `Theme` | `INCLUDES` | 主题聚合文档 |
-| `Doc` | `HAS_PARENT` / `CHILD_OF` | 文档层级(旧库迁移保留) |
+| node | `Doc` / `Concept` / `Theme` | 文档 / 概念词条 / 主题 |
+| edge | `LINKS` | 文档间显式链接 |
+| edge | `HAS_PARENT` | 文档父子层级 |
+| edge | `MENTIONS` | 文档提及概念(带抽取/消歧置信度) |
+| edge | `REL` | 概念间语义关系(带描述) |
+| edge | `INCLUDES` / `CHILD_OF` | 主题收录 / 主题层级 |
+| property | `tags` / `source` | 标签字段 / 边的来源(`rule`·`llm`·`human`) |
+
+> ⚠️ `Theme` / `INCLUDES` / `CHILD_OF` 为**预留**:接口已就绪,当前业务尚未写入任何主题数据。
+
+## 怎么用
+
+- **图由上层概念抽取流程写入**——正常生产中,`Doc` 与 `LINKS`/`HAS_PARENT`/`tags` 由概念管线(无 LLM 的确定性投影)写入,本服务只负责存储与查询。
+- **手工也可以**——概念词表(`source=rule`)、人工确认的提及(`source=human`)、调试与测试,都可以直接调写端点。
+- **最小工作流**——6 步跑通"录笔记 → 建概念 → 记提及 → 建关系 → 查图谱",见 [API 文档 → 最小工作流](docs/http-api.md#quickstart)。
 
 ## 为什么这么设计
 
@@ -45,9 +60,11 @@ curl -s localhost:8702/v1/health
 
 lensd 切换:`export LENS_GRAPH=http://localhost:8702`(dev.sh 已默认)。
 
-## HTTP 契约
+## HTTP API
 
-每个端点的请求 / 响应 / 错误示例见 [docs/http-api.md](./docs/http-api.md)。
+📚 **完整 API 文档 → [docs/http-api.md](docs/http-api.md)**
+
+里面有:**19 个端点逐个的请求/响应示例、字段表、Cypher 与逐行解读**,外加**数据结构(DTO)总表**、**最小工作流**、**常见任务对照**。下面只是端点速查:
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -70,6 +87,8 @@ lensd 切换:`export LENS_GRAPH=http://localhost:8702`(dev.sh 已默认)。
 | `POST` | `/v1/graph/themes/upsert` | upsert theme |
 | `POST` | `/v1/graph/themes/membership` | 替换 theme 的 doc 成员 |
 | `POST` | `/v1/admin/clear` | 清库(DROP 全表重建) |
+
+最小可跑示例:
 
 ```bash
 curl -s -X POST localhost:8702/v1/graph/docs/upsert -H 'Content-Type: application/json' -d '{
@@ -95,7 +114,7 @@ src/
   store/graphStore.ts   # Ladybug 官方 SDK(DDL + 18 组方法)
 configs/
 scripts/dev.sh
-docs/http-api.md       # HTTP API 详细用法
+docs/http-api.md        # 完整 API 文档(示例/字段/Cypher 解读/工作流)
 assets/readme/          # README 视觉资产
 ```
 
