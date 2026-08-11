@@ -1,7 +1,7 @@
 /**
  * GraphStore — Ladybug 图存储的 TS 实现。
  *
- * 语义 1:1 移植自 lensd 的 internal/store/graph_ladybug.go（2026-08-11 已由 yk-graph-ts 接管），
+ * 语义 1:1 移植自 lensd 的 internal/store/graph_ladybug.go（2026-08-11 已由 yk-lens-graph-store-ts 接管），
  * 唯一变化：值全部参数化查询（prepare/execute），不再字符串拼接 Cypher。
  *
  * - Connection 非线程安全 → 所有操作经一条 promise 串行队列（复刻 Go 侧互斥锁语义，

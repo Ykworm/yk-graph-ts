@@ -1,5 +1,5 @@
 {
-  "name": "yk-graph-ts",
+  "name": "yk-lens-graph-store-ts",
   "version": "1.0.0",
   "description": "yk-lens 图服务（TypeScript + @ladybugdb/core 官方 SDK）— 契约对齐 graph_ladybug.go，供 lensd HTTP 调用",
   "type": "module",

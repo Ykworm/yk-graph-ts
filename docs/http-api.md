@@ -1,4 +1,4 @@
-# HTTP API — yk-graph-ts
+# HTTP API — yk-lens-graph-store-ts
 
 图服务 HTTP 契约(`:8702`),yk-lens 的图存储层。开始读 API 之前,先看[背景:图谱是怎么来的](#背景图谱是怎么来的)与[图 Schema](#图-schema)——图里的节点和边来自一套特定的知识建模,不是通用图数据库概念。
 
@@ -27,19 +27,20 @@
 |------|------|-------------|
 | `Doc` | 知识库里的"文档"实体 | 你写进知识库的每篇笔记都会成为图里的一个 Doc 节点,自带标题、路径、标签 |
 | `Concept` | 知识库里的"概念"词条 | 例如"RRF""倒排索引"——你(或 LLM)从文档里提炼出的核心概念,统一收进词表 |
-| `Theme` | 知识库里的"主题" | 例如"检索与排序"——把一批相关文档聚成一个主题,方便按主题浏览 |
+| `Theme` | 知识库里的"主题" | 例如"检索与排序"——把一批相关文档聚成一个主题,方便按主题浏览(预留:接口已就绪,当前业务尚未写入) |
 | `LINKS` | 文档 ↔ 文档:显式链接 | 你在 Markdown 里写了 `[[wiki链接]]` 或 `[text](file.md)`,图谱里就有这条边 |
 | `HAS_PARENT` | 文档 → 父文档:层级 | wiki 树状结构:一篇子文档挂在父文档名下 |
 | `MENTIONS` | 文档 **提及** 概念 | LLM 读完文档后判定"这篇讲了 RRF",就建一条提及边,附抽取置信度;你人工确认的提及也在这里(`human`) |
 | `REL` | 概念 ↔ 概念:语义关系 | LLM 判定"RRF 是检索的一种方法",建一条 `is_a` 边,带一句话描述 |
-| `INCLUDES` | 主题 **收录** 文档 | 把相关文档归入某个主题,例如"检索与排序"主题收录了 5 篇文档 |
-| `CHILD_OF` | 主题 → 父主题:层级 | 主题树:子主题挂在父主题下 |
+| `INCLUDES` | 主题 **收录** 文档 | 把相关文档归入某个主题,例如"检索与排序"主题收录了 5 篇文档(预留:同上) |
+| `CHILD_OF` | 主题 → 父主题:层级 | 主题树:子主题挂在父主题下(预留:同上) |
 
 关键机制:
 
 - **机器产物 vs 人工产物**:MENTIONS / REL 边标 `source`(`llm` / `human` / `rule`)。机器产出的边在重跑概念抽取流程时被**先删后建**;`human` 边是人工确认的投资,**永远保留**。
 - **占位节点**:写入时目标节点还没入库(如链接指向的文档、提及指向的概念),服务自动建空节点,属性留待后续补全。
 - **唯一写入方**:图数据由上层概念抽取流程写入,服务本身不"灌图"。
+- **预留功能**:`Theme` 节点与 `INCLUDES` / `CHILD_OF` 边的接口已就绪,但当前业务尚未写入任何 Theme 数据,现网图库没有主题树。
 
 ---
 
@@ -357,6 +358,8 @@ MATCH (a:Concept)-[r:REL]->(b:Concept) RETURN a.id, b.id, r.type, r.confidence, 
 
 Upsert 主题;携带 `parent_id` 时维护 `CHILD_OF` 层级边(先删旧再建);未携带则不动既有层级边。
 
+> ⚠️ 预留:当前业务尚未调用此接口,图库中暂不会有 Theme 数据(见[领域概念](#领域概念))。
+
 ```bash
 curl -s -X POST localhost:8702/v1/graph/themes/upsert \
   -H 'Content-Type: application/json' -d '{
@@ -592,6 +595,8 @@ CREATE (a)-[:REL {type: $rel, confidence: $conf, source: $src, description: $des
 ## POST /v1/graph/themes/membership
 
 **全量替换**主题的 doc 成员(INCLUDES 出边先删后建)。
+
+> ⚠️ 预留:当前业务尚未调用此接口(见[领域概念](#领域概念))。
 
 ```bash
 curl -s -X POST localhost:8702/v1/graph/themes/membership \

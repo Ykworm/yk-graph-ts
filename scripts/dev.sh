@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# yk-graph-ts 开发启停
+# yk-lens-graph-store-ts 开发启停
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"

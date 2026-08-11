@@ -1,5 +1,5 @@
 /**
- * yk-graph-ts — 图服务 DTO 类型。
+ * yk-lens-graph-store-ts — 图服务 DTO 类型。
  * JSON 字段名与 lensd Go 侧 struct 的 json tag 对齐（graph_http.go 直接解码）。
  */
 

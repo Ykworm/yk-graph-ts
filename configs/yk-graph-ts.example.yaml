@@ -1,9 +1,9 @@
-# yk-graph-ts 配置示例
+# yk-lens-graph-store-ts 配置示例
 # 复制为 configs/yk-graph-ts.yaml 后用 IDE 打开改即可。
 #
 # 端口 :8702；lensd：-graph http://localhost:8702（或 LENS_GRAPH=http://localhost:8702）
 #
-# db_path 是 Ladybug 数据目录；默认 ./data/ladybug（相对 yk-graph-ts 的 cwd）。
+# db_path 是 Ladybug 数据目录；默认 ./data/ladybug（相对 yk-lens-graph-store-ts 的 cwd）。
 # 可直接指向现网 yk-lens-go/data/ladybug 的绝对路径（0.19.1 同版本，零迁移），
 # 但注意：本进程必须是该目录唯一打开者（单写者），lensd 不再碰图文件。
 

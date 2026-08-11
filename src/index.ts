@@ -1,5 +1,5 @@
 /**
- * yk-graph-ts — 给 lensd 用的图服务（Ladybug 官方 TS SDK + HTTP :8702）。
+ * yk-lens-graph-store-ts — 给 lensd 用的图服务（Ladybug 官方 TS SDK + HTTP :8702）。
  *
  * 边界（对齐 docs/11-GRAPH-SERVICE-SPLIT.md）：
  *   - 只服务 lensd HTTP；Agent/生产前端禁止直连
@@ -29,7 +29,7 @@ async function main(): Promise<void> {
   const { host, port } = parseAddr(cfg.addr);
 
   const server = app.listen(port, host, () => {
-    console.log(`yk-graph-ts 监听 ${host}:${port}（仅 lensd 应调用；单写者进程，勿用第二进程开同一库）`);
+    console.log(`yk-lens-graph-store-ts 监听 ${host}:${port}（仅 lensd 应调用；单写者进程，勿用第二进程开同一库）`);
   });
 
   const shutdown = async (sig: string) => {

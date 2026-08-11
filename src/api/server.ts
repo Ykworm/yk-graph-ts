@@ -1,5 +1,5 @@
 /**
- * yk-graph-ts HTTP API — 端点与 lensd graph_ladybug.go 的 Go 方法 1:1 对应。
+ * yk-lens-graph-store-ts HTTP API — 端点与 lensd graph_ladybug.go 的 Go 方法 1:1 对应。
  * Cypher 全部留在 GraphStore 内（本文件只做 JSON 编排）。
  */
 import express, { type Express, type NextFunction, type Request, type Response } from "express";

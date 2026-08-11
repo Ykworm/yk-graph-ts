@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/readme/hero.svg" width="100%" alt="yk-graph-ts — yk-lens 的知识图谱存储层,TypeScript + Ladybug 官方 SDK,经 HTTP 提供图读写">
+  <img src="./assets/readme/hero.svg" width="100%" alt="yk-lens-graph-store-ts — yk-lens 的知识图谱存储层,TypeScript + Ladybug 官方 SDK,经 HTTP 提供图读写">
 </p>
 
 <p align="center">
