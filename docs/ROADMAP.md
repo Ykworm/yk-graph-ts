@@ -21,6 +21,19 @@
 
 ## 通用 API 待补(按优先级)
 
+### P0 — 生产化(独立服务上服务器前必须)
+
+- [ ] **写路径错误真实传播** — 当前写错误被软忽略(单条失败静默吞掉),写 API 永远返回 `ok:true`,调用方无法感知写入失败。应让错误真实返回 `{ok:false,error}` + 日志 / 计数。
+- [ ] **多语句写操作加事务** — `docs/upsert`、`concepts/mentions`、`concepts/relations` 均为 MERGE/DELETE/CREATE 组合,现无事务,中途崩溃会留下撕裂状态。用 `BEGIN/COMMIT` 封装,配合单连接串行队列保证正确性。
+- [ ] **监听地址收敛 + admin 鉴权** — 默认绑定 `127.0.0.1`(当前 `:8702` 解析为 0.0.0.0),admin 端点(`/v1/admin/clear`)加共享密钥 / Token,防止局域网任意主机触发清库。
+- [ ] **HTTP 层测试覆盖** — 当前测试集中在 store 层,`server.ts` 的路由、状态码、错误中间件、请求验证分支未测。
+- [ ] **请求体验证 schema 化** — 现靠手动 `throw new Error("必填：...")` + `req.body as X`;引入 zod/ajv 统一校验,返回字段级 400。
+- [ ] **修复 / 删除 Theme 空测试** — `graphStore.test.ts` 中 Theme 测试为 `expect(true).toBe(true)`,不证明任何行为;改为写后读回或删除。
+- [ ] **干净关机** — `index.ts` 未 await `server.close()` 与队列排空,`process.exit(0)` 会切断在途写入。加关闭钩子:停监听 → 排空串行队列 → close store。
+- [ ] **结构化日志 / 指标** — 当前仅 `console.log` / `console.error`;至少引入结构化日志与基础请求指标。
+- [ ] **CI 配置** — 无 `.github/workflows` 或等效自动化,`typecheck` / `test` / `build` 全靠本地执行。
+- [ ] **构建产物一致性** — `dist/` 可能为陈旧产物,`npm start` 会跑旧代码;start 前自动 build 或加产物校验。
+
 ### P1 — 图服务核心能力缺失(当前覆盖度最弱)
 
 - [ ] **任意只读查询端点** — `POST /v1/graph/query`(body: `{cypher, params?}`),开放 Cypher 只读查询。Ladybug 本身是 Cypher 图库,但当前只暴露预置端点,路径 / 遍历 / 按任意属性过滤都做不了。**只读 + 参数化 + 结果上限**,禁止 DDL/DELETE。
