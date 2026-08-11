@@ -7,9 +7,9 @@
   <img src="https://img.shields.io/badge/version-1.0.0-007ec6" alt="version 1.0.0">
 </p>
 
-**yk-lens 的知识图谱存储层**——用 TypeScript + Ladybug 官方 SDK(`@ladybugdb/core` ^0.19.1)实现,以 HTTP 服务(`:8702`)向 lensd 提供 Doc 规则图 / Concept / Theme 的图读写。
+**yk-lens 的知识图谱存储层**——用 TypeScript + Ladybug 官方 SDK(`@ladybugdb/core` ^0.19.1)实现的**独立 HTTP 图服务**(`:8702`):启动后即可通过 HTTP 直接读写知识图谱(Doc / Concept / Theme + 六种关系),不依赖任何其它系统。
 
-> 只有 **lensd** 能调用;前端 / Agent 禁止直连。本进程是图库文件的唯一打开者(单写者)。
+> **独立可用**:任何客户端都能直接调用 HTTP 读写图谱。在 yk-lens 生态里,lensd 是它的接入方(前端 / Agent 走 lensd,不直连);本进程是图库文件的唯一打开者(单写者)。
 
 ## 背景:图谱是怎么来的
 
